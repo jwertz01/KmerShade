@@ -7,4 +7,4 @@ It divides the sample sequences into k-mers, aligns these to the gene sequences 
 Alignment and plotting options are specified in the config file.
 
 Example plot for CYP2D6-7 locus:
-![My Image](images/hprc_cyp2d6_7.png)
+![My Image](images/hprc_cyp2d6_7_cropped.png)
