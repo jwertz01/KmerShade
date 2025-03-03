@@ -1,0 +1,45 @@
+configfile: "config/config.yaml"
+
+rule all:
+    input: "results/out.html"
+
+rule divide_fasta_into_kmers:
+    input:
+        fasta = config["input_fasta"]
+    output:
+        kmers = "results/kmers.fa"
+    params:
+        kmer_size = config["kmer_size"]
+    resources:
+        mem = 4,
+        hrs = 1
+    shell:
+        "python scripts/divide_fasta_into_kmers.py -k {params.kmer_size} {input.fasta} {output.kmers}"
+
+rule align_kmers:
+    input:
+        ref = config["reference_genes"],
+        kmers = rules.divide_fasta_into_kmers.output.kmers
+    output:
+        sam = "results/kmer_align.sam"
+    params:
+        mm2_options = config["minimap2_options"]
+    threads: 4
+    resources:
+        mem = 12,
+        hrs = 2
+    shell:
+        "minimap2 {params.mm2_options} -t {threads} {input.ref} {input.kmers} > {output.sam}"
+
+rule create_plot:
+    input:
+        sam = rules.align_kmers.output.sam
+    output:
+        html = "results/out.html"
+    params:
+        plot_options = config["plot_options"]
+    resources:
+        mem = 4,
+        hrs = 1
+    shell:
+        "python scripts/make_kmer_plot.py {input.sam} \"{params.plot_options}\" {output.html}"
