@@ -9,14 +9,19 @@ from yattag import Doc
 def main():
     args = parse_args()
     plot_options = json.loads(args.plot_options.replace("'", '"'))
-    main_genes, colors, kmer_shape, sort_by = (plot_options[z] for z in [
-        'main_genes', 'colors', 'kmer_shape', 'sort_by'
+    main_genes, colors, kmer_shape, sort_by, clustered = (
+        plot_options[z] for z in [
+        'main_genes', 'colors', 'kmer_shape', 'sort_by', 'clustered'
     ])
+    clustered = clustered.lower() == "true"
     kmer_windows, alignments = process_sam(args.sam)
     out_lines = get_out_lines(
-        alignments, kmer_windows, main_genes, colors, kmer_shape, sort_by
+        alignments, kmer_windows, main_genes, colors, kmer_shape, sort_by,
+        clustered
     )
-    output_plot(args.out, out_lines, main_genes, colors, kmer_shape)
+    output_plot(
+        args.out, out_lines, main_genes, colors, kmer_shape, clustered
+    )
 
 
 def parse_args():
@@ -70,30 +75,68 @@ def process_sam(sam_fname):
 
 def get_out_lines(
     alignments, kmer_windows, main_genes, colors, kmer_shape='▉',
-    sort_by='colored_blocks'
+    sort_by='colored_blocks', clustered=False
 ):
     '''Make list with output HTML string for each sample'''
     out_lines = []
+    if clustered:
+        majority_gene_f = open('results/majority_gene.tsv', 'w')
     for sample in alignments:
         out_str = ''
+        blocks_per_color_key = defaultdict(int)
+        curr_color = None
+        curr_color_len = 0
+
         for window in kmer_windows:
-            color = assign_kmer_color(
-                alignments, sample, window, main_genes, colors
+            #if window < 23000:
+            #    continue
+            color_key = assign_kmer_color(
+                alignments, sample, window, main_genes
             )
-            out_str += f'<span style="color: {color};">{kmer_shape}</span>'
-        out_lines.append((sample, out_str))
+            color = colors[color_key]
+            if color == curr_color:
+                curr_color_len += 1
+            else:
+                if curr_color is not None:
+                    out_str += f'<span style="color: {curr_color};">{kmer_shape * curr_color_len}</span>'
+                curr_color = color
+                curr_color_len = 1
+            blocks_per_color_key[color_key] += 1
+        
+        # final color block
+        if curr_color_len > 0:
+            out_str += f'<span style="color: {curr_color};">{kmer_shape * curr_color_len}</span>'
+
+        # assign gene block
+        majority_gene = 'None'
+        if clustered:
+            for color_key in main_genes:
+                # arbitrary numbers
+                if blocks_per_color_key[color_key] > 0.5 * sum(
+                    blocks_per_color_key.values()
+                ) and blocks_per_color_key[color_key] >= 8:
+                    majority_gene = color_key
+                    break
+            majority_gene_f.write(f"{sample}\t{majority_gene}")
+
+        out_lines.append((sample, out_str, majority_gene, blocks_per_color_key))
+    if clustered:
+        majority_gene_f.close()
     if sort_by == 'colored_blocks':
         # sort by most mapped blocks for main genes
-        out_lines = sorted(out_lines, key=lambda x:sum([
-            x[1].count(colors[z]) for z in main_genes + ['Both']
-        ]), reverse=True)
+        out_lines = sorted(
+            out_lines,
+            key=lambda x: sum([x[3].get(z, 0) for z in main_genes + ['Both']]),
+            reverse=True
+        )
     else:
         assert sort_by == 'sample'
-        out_lines = sorted(out_lines, key=lambda x: x[0])
+        if '_' in out_lines[0]:
+            out_lines = sorted(out_lines, key=lambda x: (x[0][:x[0].rindex('_')], x[2]))
     return out_lines
 
 
-def assign_kmer_color(alignments, sample, window, main_genes, colors):
+def assign_kmer_color(alignments, sample, window, main_genes):
     '''Assign k-mer a color based on closest-mapping gene'''
     best_mapping_genes = []
     color_key = 'None'
@@ -119,10 +162,12 @@ def assign_kmer_color(alignments, sample, window, main_genes, colors):
                 color_key = best_mapping_genes[0]
     else:
         color_key = 'Past_end'
-    return colors[color_key]
+    return color_key
 
 
-def output_plot(out_fname, out_lines, main_genes, colors, kmer_shape='▉'):
+def output_plot(
+    out_fname, out_lines, main_genes, colors, kmer_shape='▉', clustered=False
+):
     '''Create HTML output file containing k-mer plot'''
     doc, tag, text = Doc().tagtext()
     doc.asis('<!DOCTYPE html>')
@@ -141,14 +186,21 @@ def output_plot(out_fname, out_lines, main_genes, colors, kmer_shape='▉'):
                             text('Sample')
                         with tag('th'):
                             text('')
+                        if clustered:
+                            with tag('th'):
+                                text('Majority_Gene')
                 with tag('tbody'):
                     for out_line in out_lines:
                         with tag('tr'):
                             with tag('td', style='white-space: nowrap;'):
-                                doc.asis(f'{out_line[0]}')
+                                doc.asis(out_line[0])
                             with tag('td'):
                                 doc.asis(str(out_line[1]))
+                            if clustered:
+                                with tag('td'):
+                                    doc.asis(out_line[2])
                         text('\n')
+        # Legend
         doc.stag('hr')
         doc.asis('<b>K-mer Maps Best To:</b>')
         with tag('table'):
