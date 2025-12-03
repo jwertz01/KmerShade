@@ -126,7 +126,8 @@ def get_out_lines(
         # sort by most mapped blocks for main genes
         out_lines = sorted(
             out_lines,
-            key=lambda x: sum([x[3].get(z, 0) for z in main_genes + ['Both']]),
+            key=lambda x: sum([x[3].get(z, 0) for z in x[3] if z not in ['None', 'Past_end']]),
+            #key=lambda x: sum([x[3].get(z, 0) for z in main_genes + ['Both']]),
             reverse=True
         )
     else:

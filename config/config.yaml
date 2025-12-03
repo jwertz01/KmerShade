@@ -18,4 +18,5 @@ plot_options:
     None: "lightgray"
     Past_end: "ghostwhite"
   kmer_shape: "▉"
-  sort_by: "sample"
+  sort_by: "colored_blocks"
+  clustered: "false"
